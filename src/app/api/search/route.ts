@@ -178,17 +178,17 @@ Limit your response to 400 words. Format cleanly in Markdown with bold headers. 
             if (!response.ok) {
                 const errorData = await response.json() as any;
                 console.error(`Gemini API Error (Status ${response.status}):`, JSON.stringify(errorData, null, 2));
-                return { text: `I'm sorry, Sage encountered an anomaly in the AI data stream. (Status ${response.status}: ${errorData.error?.message || 'Unknown'})` };
+                return { text: "I'm sorry, Sage encountered an anomaly in the AI data stream." };
             }
 
             const data = (await response.json()) as any;
             if (data.error) {
                 console.error("Gemini API Error Object:", JSON.stringify(data.error, null, 2));
-                return { text: `I'm sorry, Sage encountered an anomaly in the AI data stream. (Error: ${data.error.message || 'Unknown'})` };
+                return { text: "I'm sorry, Sage encountered an anomaly in the AI data stream." };
             }
             if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
                 console.error("Gemini Unexpected Response Format:", JSON.stringify(data, null, 2));
-                return { text: `I'm sorry, Sage encountered an empty response from the AI. (Format: ${JSON.stringify(data).slice(0, 100)})` };
+                return { text: "I'm sorry, Sage encountered an anomaly in the AI data stream." };
             }
             return { text: data.candidates?.[0]?.content?.parts?.[0]?.text || "" };
         };
