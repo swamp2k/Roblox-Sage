@@ -166,7 +166,7 @@ ${imageContext}
 Limit your response to 400 words. Format cleanly in Markdown with bold headers. IMPORTANT: Embed the provided images using ` + " `![Description](URL)` " + ` exactly where they are most relevant to your explanation. Do NOT wrap the entire response in a code block.`;
 
         const geminiPromise = async () => {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiKey}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
             const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -174,10 +174,21 @@ Limit your response to 400 words. Format cleanly in Markdown with bold headers. 
                     contents: [{ parts: [{ text: promptTemplate }] }]
                 })
             });
+
+            if (!response.ok) {
+                const errorData = await response.json() as any;
+                console.error(`Gemini API Error (Status ${response.status}):`, JSON.stringify(errorData, null, 2));
+                return { text: `I'm sorry, Sage encountered an anomaly in the AI data stream. (Status ${response.status}: ${errorData.error?.message || 'Unknown'})` };
+            }
+
             const data = (await response.json()) as any;
             if (data.error) {
                 console.error("Gemini API Error Object:", JSON.stringify(data.error, null, 2));
-                return { text: "I'm sorry, Sage encountered an anomaly in the AI data stream." };
+                return { text: `I'm sorry, Sage encountered an anomaly in the AI data stream. (Error: ${data.error.message || 'Unknown'})` };
+            }
+            if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                console.error("Gemini Unexpected Response Format:", JSON.stringify(data, null, 2));
+                return { text: `I'm sorry, Sage encountered an empty response from the AI. (Format: ${JSON.stringify(data).slice(0, 100)})` };
             }
             return { text: data.candidates?.[0]?.content?.parts?.[0]?.text || "" };
         };
