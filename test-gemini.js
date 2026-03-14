@@ -4,7 +4,7 @@ const keyMatch = env.match(/GEMINI_API_KEY="?(.*?)"?(\n|$)/);
 const key = keyMatch ? keyMatch[1] : null;
 
 const promptTemplate = "Say hello";
-const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${key}`;
+const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${key}`;
 
 fetch(url, {
     method: 'POST',
