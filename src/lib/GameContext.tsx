@@ -7,18 +7,8 @@ type Game = {
     wiki_url: string;
 };
 
-export type VideoResult = {
-    videoId: string;
-    title: string;
-    channelTitle: string;
-    viewCount: string;
-    thumbnailUrl: string;
-    timestamp: number;
-};
-
 export type SearchResult = {
     gemini_output: string;
-    youtube_json: VideoResult[];
 };
 
 type GameContextType = {
@@ -30,8 +20,6 @@ type GameContextType = {
     setSearchResult: (result: SearchResult | null) => void;
     isSearchingQuery: boolean;
     setIsSearchingQuery: (status: boolean) => void;
-    videoAgeLimit: string;
-    setVideoAgeLimit: (limit: string) => void;
 };
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
@@ -41,15 +29,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const [intentQuery, setIntentQuery] = useState('');
     const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
     const [isSearchingQuery, setIsSearchingQuery] = useState(false);
-    const [videoAgeLimit, setVideoAgeLimit] = useState('1y');
 
     return (
         <GameContext.Provider value={{
             selectedGame, setSelectedGame,
             intentQuery, setIntentQuery,
             searchResult, setSearchResult,
-            isSearchingQuery, setIsSearchingQuery,
-            videoAgeLimit, setVideoAgeLimit
+            isSearchingQuery, setIsSearchingQuery
         }}>
             {children}
         </GameContext.Provider>

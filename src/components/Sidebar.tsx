@@ -13,8 +13,7 @@ export default function Sidebar() {
     const {
         selectedGame, setSelectedGame,
         intentQuery, setIntentQuery,
-        setSearchResult, isSearchingQuery, setIsSearchingQuery,
-        videoAgeLimit, setVideoAgeLimit
+        setSearchResult, isSearchingQuery, setIsSearchingQuery
     } = useGameConfig();
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -85,7 +84,7 @@ export default function Sidebar() {
         setIsSearchingQuery(true);
         setSearchResult(null);
         try {
-            const res = await fetch(`/api/search?gameId=${selectedGame.id}&query=${encodeURIComponent(intentQuery)}&videoAgeLimit=${videoAgeLimit}`);
+            const res = await fetch(`/api/search?gameId=${selectedGame.id}&query=${encodeURIComponent(intentQuery)}`);
             const data = await res.json() as any;
             setSearchResult(data);
         } catch (e) {
@@ -178,22 +177,6 @@ export default function Sidebar() {
                         rows={3}
                         style={{ resize: 'vertical', minHeight: '80px', fontFamily: 'inherit' }}
                     />
-                </div>
-            </div>
-
-            <div className={styles.fieldGroup}>
-                <label className={styles.label}>3. Video Freshness</label>
-                <div className={styles.inputWrapper}>
-                    <select
-                        className={styles.input}
-                        value={videoAgeLimit}
-                        onChange={(e) => setVideoAgeLimit(e.target.value)}
-                    >
-                        <option value="any">Any Time</option>
-                        <option value="1y">Past Year</option>
-                        <option value="1m">Past Month</option>
-                        <option value="1w">Past Week</option>
-                    </select>
                 </div>
             </div>
 

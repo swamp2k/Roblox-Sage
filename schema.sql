@@ -12,7 +12,6 @@ CREATE TABLE search_cache (
     game_id INTEGER NOT NULL,
     query_hash TEXT NOT NULL,
     gemini_output TEXT,
-    youtube_json TEXT,
     timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY(game_id) REFERENCES experiences(id)
 );
