@@ -27,7 +27,7 @@ export async function GET(request: Request) {
             try {
                 const wikiApiUrl = `https://roblox.fandom.com/api.php?action=query&list=search&srsearch=${encodeURIComponent(q)}&utf8=&format=json`;
                 const wikiRes = await fetch(wikiApiUrl);
-                const wikiData = await wikiRes.json();
+                const wikiData = (await wikiRes.json()) as any;
 
                 if (wikiData.query && wikiData.query.search) {
                     const newExperiences = wikiData.query.search

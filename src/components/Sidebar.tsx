@@ -53,7 +53,7 @@ export default function Sidebar() {
             setIsSearching(true);
             try {
                 const res = await fetch(`/api/experiences?q=${encodeURIComponent(searchTerm)}`);
-                const data = await res.json();
+                const data = await res.json() as any[];
                 setSuggestions(data);
                 setShowDropdown(true);
             } catch (e) {
@@ -86,7 +86,7 @@ export default function Sidebar() {
         setSearchResult(null);
         try {
             const res = await fetch(`/api/search?gameId=${selectedGame.id}&query=${encodeURIComponent(intentQuery)}&videoAgeLimit=${videoAgeLimit}`);
-            const data = await res.json();
+            const data = await res.json() as any;
             setSearchResult(data);
         } catch (e) {
             console.error(e);

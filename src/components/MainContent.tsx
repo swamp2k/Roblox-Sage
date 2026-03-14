@@ -44,7 +44,15 @@ export default function MainContent() {
                         <div className={styles.badge}>AI Generated</div>
                     </div>
                     <div className={styles.markdownBody}>
-                        <ReactMarkdown>{searchResult.gemini_output}</ReactMarkdown>
+                        <ReactMarkdown
+                            components={{
+                                img: ({ node, ...props }) => (
+                                    <img {...props} referrerPolicy="no-referrer" />
+                                )
+                            }}
+                        >
+                            {searchResult.gemini_output}
+                        </ReactMarkdown>
                     </div>
                 </div>
 

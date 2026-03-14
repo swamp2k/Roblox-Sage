@@ -1,43 +1,8 @@
 export const runtime = 'edge';
 import { NextResponse } from 'next/server';
-import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { getDb } from '@/lib/db';
-
-// Safely load env vars manually if Next.js hasn't picked them up
-let geminiKey = process.env.GEMINI_API_KEY;
-let ytKey = process.env.YOUTUBE_API_KEY;
-
-try {
-    const envPath = path.resolve(process.cwd(), '.env.local');
-    if (fs.existsSync(envPath)) {
-        const envFile = fs.readFileSync(envPath, 'utf-8');
-        const envVars = envFile.split('\n').reduce((acc, line) => {
-            const [key, ...val] = line.split('=');
-            if (key && val.length > 0) {
-                acc[key.trim()] = val.join('=').replace(/^["'](.*)["']$/, '$1').trim();
-            }
-            return acc;
-        }, {} as Record<string, string>);
-
-        if (!geminiKey) geminiKey = envVars['GEMINI_API_KEY'];
-        if (!ytKey) ytKey = envVars['YOUTUBE_API_KEY'];
-    }
-} catch (e) {
-    console.error("Failed to read env local manually", e);
-}
-
-const YOUTUBE_API_KEY = ytKey;
-
-type VideoResult = {
-    videoId: string;
-    title: string;
-    channelTitle: string;
-    viewCount: string;
-    thumbnailUrl: string;
-    timestamp: number;
-};
+import { getRequestContext } from '@cloudflare/next-on-pages';
+import * as cheerio from 'cheerio';
 
 // Helper to format YouTube view counts
 const formatViews = (viewsStr?: string) => {
@@ -49,29 +14,31 @@ const formatViews = (viewsStr?: string) => {
     return num.toString();
 };
 
+type VideoResult = {
+    videoId: string;
+    title: string;
+    channelTitle: string;
+    viewCount: string;
+    thumbnailUrl: string;
+    timestamp: number;
+};
+
 export async function GET(request: Request) {
-    // Safely load env vars manually if Next.js hasn't picked them up
-    let geminiKey = process.env.GEMINI_API_KEY;
-    let ytKey = process.env.YOUTUBE_API_KEY;
-
+    // In Edge runtime on Cloudflare, env vars are in getRequestContext().env
+    // In Vercel or local dev, they might be in process.env
+    let env: Record<string, any> = {};
     try {
-        const envPath = path.resolve(process.cwd(), '.env.local');
-        if (fs.existsSync(envPath)) {
-            const envFile = fs.readFileSync(envPath, 'utf-8');
-            const envVars = envFile.split('\n').reduce((acc, line) => {
-                const [key, ...val] = line.split('=');
-                if (key && val.length > 0) {
-                    acc[key.trim()] = val.join('=').replace(/^["'](.*)["']$/, '$1').trim();
-                }
-                return acc;
-            }, {} as Record<string, string>);
-
-            if (!geminiKey) geminiKey = envVars['GEMINI_API_KEY'];
-            if (!ytKey) ytKey = envVars['YOUTUBE_API_KEY'];
+        const ctx = getRequestContext();
+        if (ctx && ctx.env) {
+            env = ctx.env;
         }
     } catch (e) {
-        console.error("Env read error:", e);
+        // Fallback for non-cloudflare edge environments
+        env = process.env;
     }
+
+    const geminiKey = env.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+    const ytKey = env.YOUTUBE_API_KEY || process.env.YOUTUBE_API_KEY;
 
     const { searchParams } = new URL(request.url);
     const gameIdStr = searchParams.get('gameId');
@@ -85,10 +52,10 @@ export async function GET(request: Request) {
     const gameId = parseInt(gameIdStr, 10);
     const db = getDb();
 
-    // 1. Get Game Name
+    // 1. Get Game Name and Wiki URL
     let game: any;
     try {
-        game = await db.prepare('SELECT name FROM experiences WHERE id = ?').bind(gameId).first();
+        game = await db.prepare('SELECT name, wiki_url FROM experiences WHERE id = ?').bind(gameId).first();
     } catch (e) {
         console.error("DB Error:", e);
     }
@@ -99,7 +66,8 @@ export async function GET(request: Request) {
 
     // 2. Normalize and Cache Check
     const normalizedQuery = query.toLowerCase().trim();
-    const queryHash = crypto.createHash('sha256').update(`${game.name}|${normalizedQuery}|${videoAgeLimit}`).digest('hex');
+    const hashBuffer = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${game.name}|${normalizedQuery}|${videoAgeLimit}`));
+    const queryHash = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
 
     try {
         const cached = await db.prepare(`
@@ -132,8 +100,92 @@ export async function GET(request: Request) {
     try {
         console.log("CACHE MISS - Calling External APIs in parallel");
 
+        // --- WIKI IMAGE EXTRACTION ---
+        const wikiImagePromise = async () => {
+            if (!game.wiki_url) return [];
+            try {
+                // Use MediaWiki API (action=parse) which is more robust than direct HTML scraping
+                const apiBase = game.wiki_url.split('/wiki/')[0] + '/api.php';
+                const searchPage = normalizedQuery.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join('_');
+
+                // Try searching for a specific page first, fallback to main wiki title
+                const pagesToTry = [searchPage, game.name.replace(/ /g, '_')];
+                let html = "";
+
+                for (const page of pagesToTry) {
+                    const apiUrl = `${apiBase}?action=parse&page=${encodeURIComponent(page)}&prop=text&format=json&origin=*`;
+                    const res = await fetch(apiUrl);
+                    const data = await res.json() as any;
+                    if (data.parse?.text?.['*']) {
+                        html = data.parse.text['*'];
+                        break;
+                    }
+                }
+
+                if (!html) return [];
+
+                const $ = cheerio.load(html);
+                const extractedImages: { url: string, score: number, caption: string }[] = [];
+                const queryKeywords = normalizedQuery.split(/\s+/).filter(k => k.length > 3);
+
+                $('img').each((_, el) => {
+                    const src = $(el).attr('data-src') || $(el).attr('src');
+                    if (!src || src.startsWith('data:')) return;
+
+                    const alt = $(el).attr('alt') || '';
+                    const caption = $(el).closest('figure').find('figcaption').text().trim() ||
+                        $(el).closest('.gallery-item').find('.gallery-item-caption').text().trim() ||
+                        alt;
+
+                    let score = 0;
+                    queryKeywords.forEach(kw => {
+                        if (alt.toLowerCase().includes(kw)) score += 3;
+                        if (caption.toLowerCase().includes(kw)) score += 1;
+                    });
+
+                    // Bonus for likely relevant images
+                    if (alt.toLowerCase().includes('rod') || alt.toLowerCase().includes('merchant')) score += 1;
+
+                    extractedImages.push({ url: src, score, caption });
+                });
+
+                console.log(`Extracted ${extractedImages.length} images via API. Alts: ${extractedImages.map(i => i.caption).join(', ')}`);
+
+                return extractedImages
+                    .sort((a, b) => b.score - a.score)
+                    .slice(0, 5)
+                    .map(img => {
+                        let cleanUrl = img.url;
+                        if (cleanUrl.includes('/revision/latest')) {
+                            cleanUrl = cleanUrl.split('/revision/latest')[0] + '/revision/latest';
+                        }
+                        return { url: cleanUrl, caption: img.caption };
+                    });
+            } catch (e) {
+                console.error("Wiki extraction error:", e);
+                return [];
+            }
+        };
+
+        const [wikiImages] = await Promise.all([wikiImagePromise()]);
+
         // --- GEMINI PROMPT ---
-        const promptTemplate = `You are a Roblox expert. For the game '${game.name}', provide a concise, high-level strategy for the following user issue: '${normalizedQuery}'. Focus on current meta, hidden mechanics, or specific steps. Limit to 300 words. Format cleanly in Markdown. Do NOT wrap the entire response in a code block.`;
+        let imageContext = "";
+        if (wikiImages.length > 0) {
+            imageContext = "\nBelow are relevant images from the game wiki that YOU MUST EMBED in your guide using standard Markdown syntax `![Caption](URL)` when referring to specific items, locations, or steps:\n" +
+                wikiImages.map(img => `- ${img.caption}: ${img.url}`).join('\n');
+        }
+
+        const promptTemplate = `You are a Roblox expert. For the game '${game.name}', provide a concise, informative strategy guide for the following user issue: '${normalizedQuery}'. 
+
+Focus on:
+1. Current meta and hidden mechanics.
+2. Specific, actionable steps.
+3. Be visual and descriptive.
+
+${imageContext}
+
+Limit your response to 400 words. Format cleanly in Markdown with bold headers. IMPORTANT: Embed the provided images using ` + " `![Description](URL)` " + ` exactly where they are most relevant to your explanation. Do NOT wrap the entire response in a code block.`;
 
         const geminiPromise = async () => {
             const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`;
@@ -144,7 +196,7 @@ export async function GET(request: Request) {
                     contents: [{ parts: [{ text: promptTemplate }] }]
                 })
             });
-            const data = await response.json();
+            const data = (await response.json()) as any;
             if (data.error) {
                 console.error("Gemini API Error Object:", JSON.stringify(data.error, null, 2));
                 return { text: "I'm sorry, Sage encountered an anomaly in the AI data stream." };
@@ -166,12 +218,14 @@ export async function GET(request: Request) {
             publishedAfterParam = `&publishedAfter=${limitDate.toISOString()}`;
         }
 
-        const ytSearchUrl = `https://youtube.googleapis.com/youtube/v3/search?part=snippet&maxResults=8&q=${encodeURIComponent(`${game.name} ${normalizedQuery} guide`)}&type=video${publishedAfterParam}&key=${ytKey}`;
+        // IMPROVED QUERY: Use quotes for game name and user query to avoid name-matching creator issues
+        // e.g. "Fisch" "how to get carbon rod" guide
+        const ytSearchUrl = `https://youtube.googleapis.com/youtube/v3/search?part=snippet&maxResults=8&q=${encodeURIComponent(`"${game.name}" "${normalizedQuery}" guide`)}&type=video${publishedAfterParam}&key=${ytKey}`;
 
         // Simple helper to fetch youtube video stats concurrently without slowing down primary request too much
         const ytPromise = async () => {
             const res = await fetch(ytSearchUrl);
-            const data = await res.json();
+            const data = (await res.json()) as any;
 
             if (!data.items || data.items.length === 0) return [];
 
@@ -179,7 +233,7 @@ export async function GET(request: Request) {
             const videoIds = data.items.map((i: any) => i.id.videoId).join(',');
             const statsUrl = `https://youtube.googleapis.com/youtube/v3/videos?part=statistics&id=${videoIds}&key=${ytKey}`;
             const statsRes = await fetch(statsUrl);
-            const statsData = await statsRes.json();
+            const statsData = (await statsRes.json()) as any;
 
             const statsMap = new Map();
             if (statsData.items) {
