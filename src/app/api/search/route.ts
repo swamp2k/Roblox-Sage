@@ -166,7 +166,7 @@ ${imageContext}
 Limit your response to 400 words. Format cleanly in Markdown with bold headers. IMPORTANT: Embed the provided images using ` + " `![Description](URL)` " + ` exactly where they are most relevant to your explanation. Do NOT wrap the entire response in a code block.`;
 
         const geminiPromise = async () => {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${geminiKey}`;
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${geminiKey}`;
             const response = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

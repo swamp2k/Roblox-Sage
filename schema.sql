@@ -1,4 +1,7 @@
+-- Drop dependent tables first
+DROP TABLE IF EXISTS search_cache;
 DROP TABLE IF EXISTS experiences;
+
 CREATE TABLE experiences (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -6,7 +9,6 @@ CREATE TABLE experiences (
     last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-DROP TABLE IF EXISTS search_cache;
 CREATE TABLE search_cache (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     game_id INTEGER NOT NULL,
